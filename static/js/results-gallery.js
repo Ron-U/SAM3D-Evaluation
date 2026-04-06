@@ -1,13 +1,8 @@
-// Results Gallery Data and Rendering
+// Results Gallery - Flat layout with lazy loading and synced hover playback
 // Data structure for all categories
 
 const resultsData = {
   Diversity: {
-    groups: {
-      "1": ["1.1"],
-      "2": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"],
-      "3": ["3.1", "3.2", "3.3", "3.4", "3.5", "3.6"]
-    },
     items: {
       "1.1": [0,1,2,3,4,5],
       "2.1": [0,1,2,3,4],
@@ -25,12 +20,6 @@ const resultsData = {
     }
   },
   Geometric: {
-    groups: {
-      "1": ["1.1", "1.2"],
-      "2": ["2.1"],
-      "3": ["3.1", "3.2", "3.3"],
-      "4": ["4.1"]
-    },
     items: {
       "1.1": [0,1,2,3,4,5],
       "1.2": [0,1,2,3,4],
@@ -42,11 +31,6 @@ const resultsData = {
     }
   },
   Spatial: {
-    groups: {
-      "1": ["1.1", "1.2"],
-      "2": ["2.1", "2.2"],
-      "3": ["3.1"]
-    },
     items: {
       "1.1": [0,1,2,3,4],
       "1.2": [0,1,2,3],
@@ -56,11 +40,6 @@ const resultsData = {
     }
   },
   Texture: {
-    groups: {
-      "1": ["1.1", "1.2", "1.3"],
-      "2": ["2.1"],
-      "3": ["3.1"]
-    },
     items: {
       "1.1": [0,1,2,3,4,5],
       "1.2": [0,1,2,3,4,5],
@@ -71,209 +50,192 @@ const resultsData = {
   }
 };
 
-// Initialize gallery when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-  initResultsGallery();
-});
+// ── Helpers ──────────────────────────────────────────────────────────────
 
-function initResultsGallery() {
+function getImageDimensions(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve({ width: 1, height: 1 });
+    img.src = src;
+  });
+}
+
+function sortedSubclassKeys(items) {
+  return Object.keys(items).sort((a, b) => {
+    const [am, an] = a.split('.').map(Number);
+    const [bm, bn] = b.split('.').map(Number);
+    return am - bm || an - bn;
+  });
+}
+
+// ── Pre-measure all images in parallel ───────────────────────────────────
+
+async function preloadAllDimensions() {
+  const dims = {};
+  const promises = [];
+
+  for (const [category, data] of Object.entries(resultsData)) {
+    for (const [sc, nums] of Object.entries(data.items)) {
+      for (const num of nums) {
+        const path = `static/results/${category}/${sc}/${num}/imageSeg.png`;
+        promises.push(
+          getImageDimensions(path).then(d => { dims[path] = d; })
+        );
+      }
+    }
+  }
+
+  await Promise.all(promises);
+  return dims;
+}
+
+// ── Build DOM ────────────────────────────────────────────────────────────
+
+function buildCategorySection(category, data, dims) {
+  const section = document.createElement('div');
+  section.className = 'vr-category';
+
+  // Category title
+  const title = document.createElement('h3');
+  title.className = 'vr-category-title';
+  title.textContent = category;
+  section.appendChild(title);
+
+  // Column header row
+  const header = document.createElement('div');
+  header.className = 'vr-row vr-header-row';
+  header.innerHTML =
+    '<div class="vr-cell">Input Image</div>' +
+    '<div class="vr-cell">Azimuth View</div>' +
+    '<div class="vr-cell">Elevation View</div>';
+  section.appendChild(header);
+
+  // Collect & sort subclasses
+  const subclasses = sortedSubclassKeys(data.items);
+  let rowIdx = 0;
+
+  for (const sc of subclasses) {
+    const nums = data.items[sc];
+
+    // Measure and sort by H/W ascending within each subclass
+    const measured = nums.map(num => {
+      const path = `static/results/${category}/${sc}/${num}/imageSeg.png`;
+      const d = dims[path] || { width: 1, height: 1 };
+      return { num, ratio: d.height / d.width };
+    });
+    measured.sort((a, b) => a.ratio - b.ratio);
+
+    for (const item of measured) {
+      const row = document.createElement('div');
+      row.className = 'vr-row' + (rowIdx % 2 === 1 ? ' vr-row-alt' : '');
+
+      const base = `static/results/${category}/${sc}/${item.num}`;
+
+      row.innerHTML =
+        '<div class="vr-cell">' +
+          '<img data-src="' + base + '/imageSeg.png" alt="' + category + ' ' + sc + '-' + item.num + '">' +
+        '</div>' +
+        '<div class="vr-cell">' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output.mp4"></video>' +
+        '</div>' +
+        '<div class="vr-cell">' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output_u.mp4"></video>' +
+        '</div>';
+
+      section.appendChild(row);
+      rowIdx++;
+    }
+  }
+
+  return section;
+}
+
+// ── Intersection Observer: lazy-load images + videos ─────────────────────
+
+function setupIntersectionObserver() {
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      const row = entry.target;
+
+      if (entry.isIntersecting) {
+        // Lazy-load the image if not yet loaded
+        const img = row.querySelector('img[data-src]');
+        if (img) {
+          img.src = img.dataset.src;
+          img.removeAttribute('data-src');
+        }
+
+        // Load and auto-play videos
+        row.querySelectorAll('video').forEach(v => {
+          if (!v.hasAttribute('src') && v.dataset.src) {
+            v.src = v.dataset.src;
+          }
+          v.play().catch(() => {});
+        });
+      } else {
+        // Pause and release video resources
+        row.querySelectorAll('video').forEach(v => {
+          v.pause();
+          if (v.hasAttribute('src')) {
+            v.removeAttribute('src');
+            v.load();
+          }
+        });
+      }
+    });
+  }, {
+    rootMargin: '200px 0px',
+    threshold: 0.05
+  });
+
+  document.querySelectorAll('.vr-row:not(.vr-header-row)').forEach(row => {
+    observer.observe(row);
+  });
+}
+
+// ── Hover: sync-restart both videos from t=0 ────────────────────────────
+
+function setupHoverSync() {
+  document.querySelectorAll('.vr-row:not(.vr-header-row)').forEach(row => {
+    row.addEventListener('mouseenter', () => {
+      const videos = row.querySelectorAll('video');
+      videos.forEach(v => {
+        // Ensure source is loaded
+        if (!v.hasAttribute('src') && v.dataset.src) {
+          v.src = v.dataset.src;
+        }
+        v.currentTime = 0;
+        v.play().catch(() => {});
+      });
+    });
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', async function () {
   const container = document.getElementById('results-gallery');
   if (!container) return;
 
+  // Show loading state
+  container.innerHTML = '<p class="vr-loading">Loading visual results…</p>';
+
+  // Pre-measure all image dimensions in parallel
+  const dims = await preloadAllDimensions();
+
+  // Build all category sections
+  const fragment = document.createDocumentFragment();
   const categories = ['Geometric', 'Texture', 'Spatial', 'Diversity'];
-  
-  categories.forEach(category => {
-    const card = createCategoryCard(category, resultsData[category]);
-    container.appendChild(card);
-  });
-}
 
-function createCategoryCard(category, data) {
-  const card = document.createElement('div');
-  card.className = 'category-card';
-  card.id = `card-${category}`;
-
-  // Header
-  const header = document.createElement('div');
-  header.className = 'category-header';
-  header.textContent = category;
-  card.appendChild(header);
-
-  // Group tabs
-  const groupTabs = document.createElement('div');
-  groupTabs.className = 'group-tabs';
-  
-  const groupKeys = Object.keys(data.groups);
-  groupKeys.forEach((groupNum, idx) => {
-    const tab = document.createElement('button');
-    tab.className = 'group-tab' + (idx === 0 ? ' active' : '');
-    tab.textContent = `Group ${groupNum}`;
-    tab.dataset.group = groupNum;
-    tab.onclick = () => switchGroup(category, groupNum);
-    groupTabs.appendChild(tab);
-  });
-  card.appendChild(groupTabs);
-
-  // Content container
-  const content = document.createElement('div');
-  content.className = 'category-content';
-
-  groupKeys.forEach((groupNum, idx) => {
-    const groupContent = createGroupContent(category, groupNum, data.groups[groupNum], data.items, idx === 0);
-    content.appendChild(groupContent);
-  });
-
-  card.appendChild(content);
-
-  // Scroll navigation
-  const scrollNav = document.createElement('div');
-  scrollNav.className = 'scroll-nav';
-  scrollNav.innerHTML = `
-    <button class="scroll-btn" onclick="scrollContent('${category}', -200)" title="Scroll Up">
-      <i class="fas fa-chevron-up"></i>
-    </button>
-    <button class="scroll-btn" onclick="scrollContent('${category}', 200)" title="Scroll Down">
-      <i class="fas fa-chevron-down"></i>
-    </button>
-  `;
-  card.appendChild(scrollNav);
-
-  return card;
-}
-
-function createGroupContent(category, groupNum, subclasses, items, isActive) {
-  const groupContent = document.createElement('div');
-  groupContent.className = 'group-content' + (isActive ? ' active' : '');
-  groupContent.id = `${category}-group-${groupNum}`;
-
-  // Subclass tabs (only if more than one subclass)
-  if (subclasses.length > 1) {
-    const subclassTabs = document.createElement('div');
-    subclassTabs.className = 'subclass-tabs';
-    
-    subclasses.forEach((subclass, idx) => {
-      const tab = document.createElement('button');
-      tab.className = 'subclass-tab' + (idx === 0 ? ' active' : '');
-      tab.textContent = subclass;
-      tab.dataset.subclass = subclass;
-      tab.onclick = () => switchSubclass(category, groupNum, subclass);
-      subclassTabs.appendChild(tab);
-    });
-    groupContent.appendChild(subclassTabs);
+  for (const cat of categories) {
+    fragment.appendChild(buildCategorySection(cat, resultsData[cat], dims));
   }
 
-  // Column headers
-  const headers = document.createElement('div');
-  headers.className = 'column-headers';
-  headers.innerHTML = `
-    <div class="column-header">Input Image</div>
-    <div class="column-header">3D Output</div>
-  `;
-  groupContent.appendChild(headers);
+  container.innerHTML = '';
+  container.appendChild(fragment);
 
-  // Subclass contents
-  subclasses.forEach((subclass, idx) => {
-    const subContent = document.createElement('div');
-    subContent.className = 'subclass-content' + (idx === 0 ? ' active' : '');
-    subContent.id = `${category}-${groupNum}-${subclass}`;
-
-    const scrollContainer = document.createElement('div');
-    scrollContainer.className = 'scroll-container';
-    scrollContainer.id = `scroll-${category}-${groupNum}-${subclass}`;
-
-    const itemNumbers = items[subclass] || [];
-    itemNumbers.forEach(itemNum => {
-      const row = createResultRow(category, subclass, itemNum);
-      scrollContainer.appendChild(row);
-    });
-
-    subContent.appendChild(scrollContainer);
-    groupContent.appendChild(subContent);
-  });
-
-  return groupContent;
-}
-
-function createResultRow(category, subclass, itemNum) {
-  const row = document.createElement('div');
-  row.className = 'result-row';
-
-  const basePath = `static/results/${category}/${subclass}/${itemNum}`;
-
-  row.innerHTML = `
-    <div class="result-image">
-      <img src="${basePath}/imageSeg.png" alt="${category} ${subclass} #${itemNum} Input" loading="lazy">
-    </div>
-    <div class="result-video">
-      <video controls muted loop playsinline>
-        <source src="${basePath}/output.mp4" type="video/mp4">
-        Your browser does not support video.
-      </video>
-    </div>
-  `;
-
-  return row;
-}
-
-function switchGroup(category, groupNum) {
-  const card = document.getElementById(`card-${category}`);
-  if (!card) return;
-
-  // Update tabs
-  card.querySelectorAll('.group-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.group === groupNum);
-  });
-
-  // Update content
-  card.querySelectorAll('.group-content').forEach(content => {
-    content.classList.toggle('active', content.id === `${category}-group-${groupNum}`);
-  });
-}
-
-function switchSubclass(category, groupNum, subclass) {
-  const groupContent = document.getElementById(`${category}-group-${groupNum}`);
-  if (!groupContent) return;
-
-  // Update tabs
-  groupContent.querySelectorAll('.subclass-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.subclass === subclass);
-  });
-
-  // Update content
-  groupContent.querySelectorAll('.subclass-content').forEach(content => {
-    content.classList.toggle('active', content.id === `${category}-${groupNum}-${subclass}`);
-  });
-}
-
-function scrollContent(category, delta) {
-  const card = document.getElementById(`card-${category}`);
-  if (!card) return;
-
-  const activeGroup = card.querySelector('.group-content.active');
-  if (!activeGroup) return;
-
-  const activeSubclass = activeGroup.querySelector('.subclass-content.active');
-  if (!activeSubclass) return;
-
-  const scrollContainer = activeSubclass.querySelector('.scroll-container');
-  if (scrollContainer) {
-    scrollContainer.scrollBy({
-      top: delta,
-      behavior: 'smooth'
-    });
-  }
-}
-
-// Auto-play videos on hover
-document.addEventListener('mouseover', function(e) {
-  if (e.target.tagName === 'VIDEO') {
-    e.target.play();
-  }
-});
-
-document.addEventListener('mouseout', function(e) {
-  if (e.target.tagName === 'VIDEO') {
-    e.target.pause();
-    e.target.currentTime = 0;
-  }
+  // Wire up lazy loading + hover sync
+  setupIntersectionObserver();
+  setupHoverSync();
 });
