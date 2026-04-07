@@ -50,6 +50,30 @@ const resultsData = {
   }
 };
 
+let pendingJumpTargetId = null;
+
+function setupJumpNavigation() {
+  const jumpButtons = document.querySelectorAll('.vr-jump-btn');
+  if (!jumpButtons.length) return;
+
+  jumpButtons.forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.preventDefault();
+      const href = btn.getAttribute('href') || '';
+      const targetId = href.startsWith('#') ? href.slice(1) : '';
+      if (!targetId) return;
+
+      const target = document.getElementById(targetId);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+
+      pendingJumpTargetId = targetId;
+    });
+  });
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function getImageDimensions(src) {
@@ -95,6 +119,7 @@ async function preloadAllDimensions() {
 function buildCategorySection(category, data, dims) {
   const section = document.createElement('div');
   section.className = 'vr-category';
+  section.id = `vr-${category.toLowerCase()}`;
 
   // Category title
   const title = document.createElement('h3');
@@ -122,7 +147,7 @@ function buildCategorySection(category, data, dims) {
     const measured = nums.map(num => {
       const path = `static/results/${category}/${sc}/${num}/imageSeg.png`;
       const d = dims[path] || { width: 1, height: 1 };
-      return { num, ratio: d.height / d.width };
+      return { num, ratio: d.height / d.width, width: d.width, height: d.height };
     });
     measured.sort((a, b) => a.ratio - b.ratio);
 
@@ -134,13 +159,13 @@ function buildCategorySection(category, data, dims) {
 
       row.innerHTML =
         '<div class="vr-cell">' +
-          '<img data-src="' + base + '/imageSeg.png" alt="' + category + ' ' + sc + '-' + item.num + '">' +
+          '<img data-src="' + base + '/imageSeg.png" alt="' + category + ' ' + sc + '-' + item.num + '" width="' + item.width + '" height="' + item.height + '">' +
         '</div>' +
         '<div class="vr-cell">' +
-          '<video muted loop playsinline preload="none" data-src="' + base + '/output.mp4"></video>' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
         '</div>' +
         '<div class="vr-cell">' +
-          '<video muted loop playsinline preload="none" data-src="' + base + '/output_u.mp4"></video>' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output_u.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
         '</div>';
 
       section.appendChild(row);
@@ -218,6 +243,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   const container = document.getElementById('results-gallery');
   if (!container) return;
 
+  setupJumpNavigation();
+
   // Show loading state
   container.innerHTML = '<p class="vr-loading">Loading visual results…</p>';
 
@@ -234,6 +261,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   container.innerHTML = '';
   container.appendChild(fragment);
+
+  if (pendingJumpTargetId) {
+    const pendingTarget = document.getElementById(pendingJumpTargetId);
+    if (pendingTarget) {
+      pendingTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    pendingJumpTargetId = null;
+  }
 
   // Wire up lazy loading + hover sync
   setupIntersectionObserver();

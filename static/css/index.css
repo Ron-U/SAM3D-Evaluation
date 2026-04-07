@@ -759,6 +759,34 @@ a:focus {
   max-width: 1400px;
 }
 
+.vr-jump-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.5rem;
+}
+
+.vr-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  background: #3a3a3a;
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.vr-jump-btn:hover,
+.vr-jump-btn:focus {
+  background: #1f1f1f;
+  color: #ffffff;
+  border-color: #1f1f1f;
+}
+
 /* Loading indicator */
 .vr-loading {
   text-align: center;
@@ -849,8 +877,20 @@ a:focus {
   background: var(--background-accent);
 }
 
+.vr-cell img {
+  object-fit: contain;
+}
+
+.vr-cell video {
+  object-fit: contain;
+}
+
 /* ── Responsive ── */
 @media screen and (max-width: 768px) {
+  .vr-jump-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .vr-row {
     flex-direction: column;
     gap: 8px;
