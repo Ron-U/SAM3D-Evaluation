@@ -431,13 +431,13 @@ function buildCategorySection(category, data, dims) {
 
         '<div class="vr-cell">' +
 
-          '<video muted loop playsinline preload="none" data-src="' + base + '/output.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output_eve.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
 
         '</div>' +
 
         '<div class="vr-cell">' +
 
-          '<video muted loop playsinline preload="none" data-src="' + base + '/output_u.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
+          '<video muted loop playsinline preload="none" data-src="' + base + '/output_azi.mp4" style="aspect-ratio:' + item.width + ' / ' + item.height + ';"></video>' +
 
         '</div>';
 
